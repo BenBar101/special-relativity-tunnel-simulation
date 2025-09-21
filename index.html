@@ -1,0 +1,630 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimized Special Relativity Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #000;
+            color: #fff;
+            font-family: Arial, sans-serif;
+            overflow-x: hidden;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            padding: 15px;
+            border-radius: 10px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            z-index: 100;
+            min-width: 250px;
+        }
+        
+        .control-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        
+        .velocity-slider {
+            width: 100%;
+            max-width: 400px;
+            margin: 10px 0;
+        }
+        
+        .info-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .info-card {
+            background: rgba(0, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid rgba(0, 255, 255, 0.3);
+        }
+        
+        .canvas-container {
+            border: 2px solid #333;
+            border-radius: 10px;
+            overflow: hidden;
+            background: #000;
+            position: relative;
+            margin-top: 20px;
+        }
+        
+        canvas {
+            display: block;
+            width: 100%;
+            height: 75vh;
+        }
+        
+        .velocity-display {
+            font-size: 1.2em;
+            color: #ff6b6b;
+            font-weight: bold;
+        }
+        
+        .time-display {
+            font-size: 1.1em;
+            color: #4ecdc4;
+        }
+        
+        .gamma-display {
+            font-size: 1.1em;
+            color: #ffe66d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Optimized Special Relativity Simulation</h1>
+        
+        <div class="canvas-container">
+            <div class="controls">
+                <div class="control-group">
+                    <label for="velocitySlider">Velocity (% of light speed):</label>
+                    <input type="range" id="velocitySlider" class="velocity-slider" 
+                           min="-95" max="95" value="0" step="1">
+                    <div class="velocity-display" id="velocityDisplay">0.00% c</div>
+                </div>
+            </div>
+            <canvas id="simulationCanvas" width="1200" height="600"></canvas>
+        </div>
+        
+        <div class="info-panel">
+            <div class="info-card">
+                <h3>Your Time (Moving)</h3>
+                <div class="time-display" id="cameraTime">0.00 s</div>
+            </div>
+            <div class="info-card">
+                <h3>Earth Time (Stationary)</h3>
+                <div class="time-display" id="globalTime">0.00 s</div>
+            </div>
+            <div class="info-card">
+                <h3>Lorentz Factor (γ)</h3>
+                <div class="gamma-display" id="gammaDisplay">1.000</div>
+            </div>
+            <div class="info-card">
+                <h3>Length Contraction</h3>
+                <div class="gamma-display" id="contractionDisplay">100.0%</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class OptimizedRelativitySimulation {
+            constructor() {
+                this.canvas = document.getElementById('simulationCanvas');
+                this.ctx = this.canvas.getContext('2d', { alpha: false });
+                this.velocitySlider = document.getElementById('velocitySlider');
+                
+                // Core physics state
+                this.velocity = 0; // This is v/c, also known as beta
+                this.globalTime = 0; // Time in the stationary (Earth) frame
+                this.cameraTime = 0; // Time for the moving observer (proper time)
+                this.position = 0;
+                this.lastTime = performance.now();
+                
+                // Cached values
+                this.gamma = 1;
+                this.beta = 0; // Magnitude of velocity
+                this.needsPhysicsUpdate = true;
+                
+                // Constants
+                this.c = 300; // Speed of light in world units per second
+                this.focalLength = 400;
+                this.halfWidth = this.canvas.width / 2;
+                this.halfHeight = this.canvas.height / 2;
+                
+                // Scene objects
+                this.tunnelSegments = [];
+                this.sideObjects = [];
+                this.visibleObjects = [];
+                
+                this.frameCount = 0;
+                
+                // Object pools for recycling
+                this.colorCache = new Map();
+                
+                this.initializeTunnel();
+                this.initializeSideObjects();
+                this.setupEventListeners();
+                
+                this.updateDisplays();
+                this.animate();
+            }
+            
+            initializeTunnel() {
+                // Pre-calculate tunnel segments
+                for (let i = -10; i <= 40; i++) {
+                    const segment = {
+                        id: i,
+                        restZ: i * 80,
+                        width: 200,
+                        height: 150,
+                        halfWidth: 100,
+                        halfHeight: 75,
+                        corners: new Float32Array(12) // Pre-allocate corner array
+                    };
+                    this.tunnelSegments.push(segment);
+                }
+            }
+            
+            initializeSideObjects() {
+                const rulerColor = '#00ff88';
+                const markerColor = '#ff4488';
+                const positions = [-800, -600, -400, -200, 0, 200, 400, 600, 800, 1000, 1200, 1400, 1600, 1800, 2000];
+                
+                positions.forEach((zPos, i) => {
+                    // Top rulers
+                    this.sideObjects.push({
+                        type: 0, // 0 = ruler
+                        id: i * 10,
+                        restZ: zPos,
+                        x: 0,
+                        y: -75,
+                        length: 120,
+                        originalLength: 120,
+                        thickness: 3,
+                        color: rulerColor,
+                        orientation: 0, // 0 = horizontal
+                        markings: 6,
+                        wall: 0 // 0 = top
+                    });
+                    
+                    // Bottom rulers
+                    this.sideObjects.push({
+                        type: 0,
+                        id: i * 10 + 1,
+                        restZ: zPos + 100,
+                        x: 0,
+                        y: 75,
+                        length: 100,
+                        originalLength: 100,
+                        thickness: 3,
+                        color: rulerColor,
+                        orientation: 0,
+                        markings: 5,
+                        wall: 1 // 1 = bottom
+                    });
+                    
+                    // Side rulers (less frequent)
+                    if (i % 2 === 0) {
+                        this.sideObjects.push({
+                            type: 0,
+                            id: i * 10 + 2,
+                            restZ: zPos + 50,
+                            x: -100,
+                            y: 0,
+                            length: 80,
+                            originalLength: 80,
+                            thickness: 2,
+                            color: rulerColor,
+                            orientation: 1, // 1 = vertical
+                            markings: 4,
+                            wall: 2 // 2 = left
+                        });
+                        
+                        this.sideObjects.push({
+                            type: 0,
+                            id: i * 10 + 3,
+                            restZ: zPos + 50,
+                            x: 100,
+                            y: 0,
+                            length: 80,
+                            originalLength: 80,
+                            thickness: 2,
+                            color: rulerColor,
+                            orientation: 1,
+                            markings: 4,
+                            wall: 3 // 3 = right
+                        });
+                    }
+                    
+                    // Markers (even less frequent)
+                    if (i % 3 === 0) {
+                        this.sideObjects.push({
+                            type: 1, // 1 = marker
+                            id: i * 10 + 4,
+                            restZ: zPos,
+                            x: 0,
+                            y: 0,
+                            size: 8,
+                            color: markerColor,
+                            label: zPos + 'm'
+                        });
+                    }
+                });
+            }
+            
+            setupEventListeners() {
+                this.velocitySlider.addEventListener('input', (e) => {
+                    this.velocity = parseFloat(e.target.value) / 100;
+                    this.needsPhysicsUpdate = true;
+                    this.updateDisplays();
+                });
+            }
+            
+            updatePhysicsCache() {
+                if (!this.needsPhysicsUpdate) return;
+                
+                this.beta = Math.abs(this.velocity);
+                if (this.beta >= 0.9999) {
+                    this.gamma = 1000;
+                } else {
+                    const betaSq = this.beta * this.beta;
+                    this.gamma = 1 / Math.sqrt(1 - betaSq);
+                }
+                
+                this.needsPhysicsUpdate = false;
+            }
+            
+            calculateLightAberration(x, y, z) {
+                if (this.beta === 0) return { x, y, z };
+                
+                const distSq = x*x + y*y + z*z;
+                if (distSq === 0) return { x, y, z };
+                
+                const dist = Math.sqrt(distSq);
+                const invDist = 1 / dist;
+                const cosTheta = z * invDist;
+                
+                const denominator = 1 - this.velocity * cosTheta;
+                if (Math.abs(denominator) < 1e-6) return { x: 0, y: 0, z: z };
+
+                const cosNewTheta = (cosTheta - this.velocity) / denominator;
+                
+                const newDist = dist * this.gamma * denominator;
+
+                const newZ = newDist * cosNewTheta;
+                const xyFactor = Math.sqrt((x * x + y * y) / (distSq) || 1);
+                const newXY = newDist * Math.sqrt(1 - cosNewTheta * cosNewTheta || 0);
+
+                return {
+                    x: x / xyFactor * newXY / dist,
+                    y: y / xyFactor * newXY / dist,
+                    z: newZ
+                };
+            }
+            
+            project3D(x, y, z) {
+                if (z <= 1) return null;
+                
+                const invZ = this.focalLength / z;
+                return {
+                    x: this.halfWidth + x * invZ,
+                    y: this.halfHeight + y * invZ,
+                    scale: invZ,
+                    z: z
+                };
+            }
+            
+            calculateRelativisticDoppler(originalColor) {
+                const cacheKey = `${originalColor}_${this.velocity.toFixed(2)}`;
+                
+                if (this.colorCache.has(cacheKey)) {
+                    return this.colorCache.get(cacheKey);
+                }
+                
+                if (this.beta < 0.01) {
+                    const result = { color: originalColor, brightness: 1.0 };
+                    this.colorCache.set(cacheKey, result);
+                    return result;
+                }
+                
+                const isMovingForward = this.velocity > 0;
+                
+                const frequencyRatio = this.gamma * (1 + this.velocity);
+                
+                const hex = originalColor.replace('#', '');
+                const r = parseInt(hex.slice(0, 2) || 'ff', 16);
+                const g = parseInt(hex.slice(2, 4) || 'ff', 16);
+                const b = parseInt(hex.slice(4, 6) || 'ff', 16);
+                
+                const shift = Math.min(0.9, this.beta * 2.5);
+                let newR, newG, newB;
+                
+                if (isMovingForward) { // Blueshift
+                    newR = Math.max(10, r * (1 - shift * 0.9));
+                    newG = Math.max(30, g * (1 - shift * 0.4));
+                    newB = Math.min(255, b + (255 - b) * shift);
+                } else { // Redshift (for backward motion)
+                    newR = Math.min(255, r + (255 - r) * shift);
+                    newG = Math.max(10, g * (1 - shift * 0.5));
+                    newB = Math.max(10, b * (1 - shift * 0.9));
+                }
+                
+                const result = {
+                    color: `rgb(${newR|0}, ${newG|0}, ${newB|0})`,
+                    brightness: Math.pow(this.gamma * (1 - this.velocity), 3)
+                };
+                
+                if (this.colorCache.size > 100) {
+                    this.colorCache.clear();
+                }
+                
+                this.colorCache.set(cacheKey, result);
+                return result;
+            }
+            
+            render() {
+                this.ctx.fillStyle = '#000011';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                this.renderTunnel();
+                this.renderObjects();
+            }
+            
+            renderTunnel() {
+                this.ctx.strokeStyle = '#333';
+                this.ctx.lineWidth = 1;
+                this.ctx.beginPath();
+                
+                for (let i = 0; i < this.tunnelSegments.length; i++) {
+                    const segment = this.tunnelSegments[i];
+                    const z = segment.restZ - this.position;
+                    
+                    if (z <= -150 || z >= 1200) continue;
+                    
+                    const corners = segment.corners;
+                    corners[0] = -segment.halfWidth; corners[1] = -segment.halfHeight; corners[2] = z;
+                    corners[3] = segment.halfWidth; corners[4] = -segment.halfHeight; corners[5] = z;
+                    corners[6] = segment.halfWidth; corners[7] = segment.halfHeight; corners[8] = z;
+                    corners[9] = -segment.halfWidth; corners[10] = segment.halfHeight; corners[11] = z;
+                    
+                    let validCorners = 0;
+                    let firstX, firstY;
+                    
+                    for (let j = 0; j < 4; j++) {
+                        const idx = j * 3;
+                        const aberrated = this.calculateLightAberration(
+                            corners[idx], corners[idx + 1], corners[idx + 2]
+                        );
+                        const projected = this.project3D(aberrated.x, aberrated.y, aberrated.z);
+                        
+                        if (projected) {
+                            if (validCorners === 0) {
+                                firstX = projected.x;
+                                firstY = projected.y;
+                                this.ctx.moveTo(firstX, firstY);
+                            } else {
+                                this.ctx.lineTo(projected.x, projected.y);
+                            }
+                            validCorners++;
+                        }
+                    }
+                    
+                    if (validCorners === 4) {
+                        this.ctx.lineTo(firstX, firstY);
+                    }
+                }
+                
+                this.ctx.stroke();
+            }
+            
+            renderObjects() {
+                const minZ = -300;
+                const maxZ = 1500;
+                
+                this.visibleObjects = [];
+                for (let i = 0; i < this.sideObjects.length; i++) {
+                    const obj = this.sideObjects[i];
+                    const z = obj.restZ - this.position;
+                    if (z > minZ && z < maxZ) {
+                        obj._viewZ = z;
+                        this.visibleObjects.push(obj);
+                    }
+                }
+                
+                this.visibleObjects.sort((a, b) => b._viewZ - a._viewZ);
+                
+                for (let i = 0; i < this.visibleObjects.length; i++) {
+                    this.renderObject(this.visibleObjects[i]);
+                }
+            }
+            
+            renderObject(obj) {
+                const z = obj._viewZ;
+                const aberrated = this.calculateLightAberration(obj.x, obj.y, z);
+                const projected = this.project3D(aberrated.x, aberrated.y, aberrated.z);
+                
+                if (!projected || projected.scale < 0.003) return;
+                
+                let displayLength = obj.originalLength || obj.length;
+                if (obj.type === 0 && obj.orientation === 0 && this.beta > 0.01) {
+                    displayLength = obj.originalLength / this.gamma;
+                }
+                
+                const doppler = this.calculateRelativisticDoppler(obj.color);
+                this.ctx.globalAlpha = Math.min(1.0, Math.max(0.1, doppler.brightness));
+                
+                if (obj.type === 0) {
+                    this.renderRuler(obj, projected, displayLength, doppler.color);
+                } else if (obj.type === 1) {
+                    this.renderMarker(obj, projected, doppler.color);
+                }
+                
+                this.ctx.globalAlpha = 1.0;
+            }
+            
+            renderRuler(obj, proj, length, color) {
+                this.ctx.strokeStyle = color;
+                this.ctx.lineWidth = Math.max(1, obj.thickness * proj.scale);
+                
+                if (obj.orientation === 0) { // horizontal
+                    const halfWidth = (length * proj.scale) / 2;
+                    const x1 = proj.x - halfWidth;
+                    const x2 = proj.x + halfWidth;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(x1, proj.y);
+                    this.ctx.lineTo(x2, proj.y);
+                    this.ctx.stroke();
+                    
+                    if (obj.markings > 0 && proj.scale > 0.02) {
+                        const step = (x2 - x1) / obj.markings;
+                        const markHeight = 10 * proj.scale;
+                        const halfMark = markHeight / 2;
+                        
+                        this.ctx.beginPath();
+                        for (let i = 0; i <= obj.markings; i++) {
+                            const mx = x1 + i * step;
+                            this.ctx.moveTo(mx, proj.y - halfMark);
+                            this.ctx.lineTo(mx, proj.y + halfMark);
+                        }
+                        this.ctx.stroke();
+                    }
+                    
+                    if (proj.scale > 0.05) {
+                        this.ctx.fillStyle = color;
+                        this.ctx.font = `${Math.max(8, 12 * proj.scale)|0}px Arial`;
+                        this.ctx.textAlign = 'center';
+                        const labelY = obj.wall === 0 ? proj.y + 25 * proj.scale : proj.y - 20 * proj.scale;
+                        this.ctx.fillText(`${length|0}m`, proj.x, labelY);
+                    }
+                    
+                } else { // vertical
+                    const halfHeight = (obj.length * proj.scale) / 2;
+                    const y1 = proj.y - halfHeight;
+                    const y2 = proj.y + halfHeight;
+                    
+                    this.ctx.beginPath();
+                    this.ctx.moveTo(proj.x, y1);
+                    this.ctx.lineTo(proj.x, y2);
+                    this.ctx.stroke();
+                    
+                    if (obj.markings > 0 && proj.scale > 0.02) {
+                        const step = (y2 - y1) / obj.markings;
+                        const markWidth = 10 * proj.scale;
+                        const halfMark = markWidth / 2;
+                        
+                        this.ctx.beginPath();
+                        for (let i = 0; i <= obj.markings; i++) {
+                            const my = y1 + i * step;
+                            this.ctx.moveTo(proj.x - halfMark, my);
+                            this.ctx.lineTo(proj.x + halfMark, my);
+                        }
+                        this.ctx.stroke();
+                    }
+
+                    // --- NEW CODE BLOCK TO DISPLAY VERTICAL RULER LENGTH ---
+                    if (proj.scale > 0.05) {
+                        this.ctx.fillStyle = color;
+                        this.ctx.font = `${Math.max(8, 12 * proj.scale)|0}px Arial`;
+                        this.ctx.textAlign = 'left';
+                        this.ctx.textBaseline = 'middle';
+                        const labelX = proj.x + 15 * proj.scale; // Position text to the right of the ruler
+                        const labelY = proj.y; // Center text vertically
+                        // Display the original length, as vertical rulers don't contract
+                        this.ctx.fillText(`${obj.length|0}m`, labelX, labelY);
+                    }
+                }
+            }
+            
+            renderMarker(obj, proj, color) {
+                this.ctx.fillStyle = color;
+                const size = obj.size * proj.scale;
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(proj.x, proj.y - size);
+                this.ctx.lineTo(proj.x + size, proj.y);
+                this.ctx.lineTo(proj.x, proj.y + size);
+                this.ctx.lineTo(proj.x - size, proj.y);
+                this.ctx.closePath();
+                this.ctx.fill();
+                
+                if (proj.scale > 0.05) {
+                    this.ctx.font = `${Math.max(8, 12 * proj.scale)|0}px Arial`;
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText(obj.label, proj.x, proj.y + size + 20 * proj.scale);
+                }
+            }
+            
+            updateTimes(deltaTime) {
+                const dt = deltaTime * 0.001; // Convert to seconds for the stationary frame
+                
+                this.globalTime += dt; // Stationary time advances normally
+                this.cameraTime += dt / this.gamma; // Moving clock experiences time dilation
+                
+                const speed = this.velocity * this.c; // Use signed velocity and c
+                this.position += speed * dt;
+            }
+            
+            updateDisplays() {
+                this.updatePhysicsCache();
+                
+                const velocityPercent = (this.velocity * 100).toFixed(2);
+                document.getElementById('velocityDisplay').textContent = `${velocityPercent}% c`;
+                document.getElementById('gammaDisplay').textContent = this.gamma.toFixed(3);
+                
+                const contractionFactor = (100 / this.gamma).toFixed(1);
+                document.getElementById('contractionDisplay').textContent = `${contractionFactor}%`;
+            }
+            
+            updateTimeDisplays() {
+                this.frameCount++;
+                if (this.frameCount % 10 === 0) {
+                    document.getElementById('cameraTime').textContent = `${this.cameraTime.toFixed(2)} s`;
+                    document.getElementById('globalTime').textContent = `${this.globalTime.toFixed(2)} s`;
+                }
+            }
+            
+            animate() {
+                const currentTime = performance.now();
+                const deltaTime = currentTime - this.lastTime;
+                this.lastTime = currentTime;
+                
+                this.updatePhysicsCache();
+                this.updateTimes(deltaTime);
+                this.render();
+                this.updateTimeDisplays();
+                
+                requestAnimationFrame(() => this.animate());
+            }
+        }
+        
+        window.addEventListener('load', () => {
+            new OptimizedRelativitySimulation();
+        });
+    </script>
+</body>
+</html>
