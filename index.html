@@ -137,8 +137,7 @@
                 this.ctx = this.canvas.getContext('2d', { alpha: false });
                 this.velocitySlider = document.getElementById('velocitySlider');
                 
-                // Core physics state
-                this.velocity = 0; // This is v/c, also known as beta
+                this.velocity = 0; // This is v/c: beta
                 this.globalTime = 0; // Time in the stationary (Earth) frame
                 this.cameraTime = 0; // Time for the moving observer (proper time)
                 this.position = 0;
@@ -149,7 +148,6 @@
                 this.beta = 0; // Magnitude of velocity
                 this.needsPhysicsUpdate = true;
                 
-                // Constants
                 this.c = 300; // Speed of light in world units per second
                 this.focalLength = 400;
                 this.halfWidth = this.canvas.width / 2;
@@ -159,8 +157,6 @@
                 this.tunnelSegments = [];
                 this.sideObjects = [];
                 this.visibleObjects = [];
-                
-                this.frameCount = 0;
                 
                 // Object pools for recycling
                 this.colorCache = new Map();
@@ -546,15 +542,13 @@
                         this.ctx.stroke();
                     }
 
-                    // --- NEW CODE BLOCK TO DISPLAY VERTICAL RULER LENGTH ---
                     if (proj.scale > 0.05) {
                         this.ctx.fillStyle = color;
                         this.ctx.font = `${Math.max(8, 12 * proj.scale)|0}px Arial`;
                         this.ctx.textAlign = 'left';
                         this.ctx.textBaseline = 'middle';
-                        const labelX = proj.x + 15 * proj.scale; // Position text to the right of the ruler
-                        const labelY = proj.y; // Center text vertically
-                        // Display the original length, as vertical rulers don't contract
+                        const labelX = proj.x + 15 * proj.scale;
+                        const labelY = proj.y;
                         this.ctx.fillText(`${obj.length|0}m`, labelX, labelY);
                     }
                 }
@@ -601,11 +595,8 @@
             }
             
             updateTimeDisplays() {
-                this.frameCount++;
-                if (this.frameCount % 10 === 0) {
-                    document.getElementById('cameraTime').textContent = `${this.cameraTime.toFixed(2)} s`;
-                    document.getElementById('globalTime').textContent = `${this.globalTime.toFixed(2)} s`;
-                }
+                document.getElementById('cameraTime').textContent = `${this.cameraTime.toFixed(2)} s`;
+                document.getElementById('globalTime').textContent = `${this.globalTime.toFixed(2)} s`;
             }
             
             animate() {
