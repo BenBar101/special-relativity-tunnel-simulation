@@ -3,7 +3,7 @@ name: Deploy Test Branch to GitHub Pages
 on:
   push:
     branches:
-      - InteligentPatches  # your testing branch
+      - InteligentPatches  # testing branch
 
 jobs:
   build-and-deploy:
