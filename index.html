@@ -138,7 +138,6 @@
                 this.velocitySlider = document.getElementById('velocitySlider');
                 
                 // Core physics state
-                this.velocity = 0;
                 this.globalTime = 0;
                 this.cameraTime = 0;
                 this.position = 0;
@@ -218,7 +217,7 @@
             
             setupEventListeners() {
                 this.velocitySlider.addEventListener('input', (e) => {
-                    this.velocity = parseFloat(e.target.value) / 100;
+                    this.beta = parseFloat(e.target.value) / 100;
                     this.needsPhysicsUpdate = true;
                     this.updateDisplays();
                 });
@@ -226,7 +225,6 @@
             
             updatePhysicsCache() {
                 if (!this.needsPhysicsUpdate) return;
-                this.beta = Math.abs(this.velocity);
                 this.gamma = 1 / Math.sqrt(1 - this.beta * this.beta);
                 this.needsPhysicsUpdate = false;
             }
@@ -237,9 +235,9 @@
                 if (distSq === 0) return { x, y, z };
                 const dist = Math.sqrt(distSq);
                 const cosTheta = z / dist;
-                const denominator = 1 - this.velocity * cosTheta;
+                const denominator = 1 - this.beta * cosTheta;
                 if (Math.abs(denominator) < 1e-6) return { x: 0, y: 0, z: z };
-                const cosNewTheta = (cosTheta - this.velocity) / denominator;
+                const cosNewTheta = (cosTheta - this.beta) / denominator;
                 const newDist = dist * this.gamma * denominator;
                 const newZ = newDist * cosNewTheta;
                 const xyFactor = Math.sqrt((x * x + y * y) / (distSq) || 1);
@@ -254,10 +252,10 @@
             }
             
             calculateRelativisticDoppler(originalColor) {
-                const cacheKey = `${originalColor}_${this.velocity.toFixed(2)}`;
+                const cacheKey = `${originalColor}_${this.beta.toFixed(2)}`;
                 if (this.colorCache.has(cacheKey)) return this.colorCache.get(cacheKey);
                 if (this.beta < 0.01) return { color: originalColor, brightness: 1.0 };
-                const isMovingForward = this.velocity > 0;
+                const isMovingForward = this.beta > 0;
                 const hex = originalColor.replace('#', '');
                 const r = parseInt(hex.slice(0, 2) || 'ff', 16);
                 const g = parseInt(hex.slice(2, 4) || 'ff', 16);
@@ -275,7 +273,7 @@
                 }
                 const result = {
                     color: `rgb(${newR|0}, ${newG|0}, ${newB|0})`,
-                    brightness: Math.pow(this.gamma * (1 - this.velocity), 3)
+                    brightness: Math.pow(this.gamma * (1 - this.beta), 3)
                 };
                 if (this.colorCache.size > 100) this.colorCache.clear();
                 this.colorCache.set(cacheKey, result);
@@ -422,13 +420,13 @@
                 // Update your position in the stationary (Earth) frame
                 // The distance you travel in that frame depends on the time that has passed in that frame.
                 const earth_dt = dt * this.gamma;
-                const speed = this.velocity * this.c;
+                const speed = this.beta * this.c;
                 this.position += speed * earth_dt;
             }
             
             updateDisplays() {
                 this.updatePhysicsCache();
-                document.getElementById('velocityDisplay').textContent = `${(this.velocity * 100).toFixed(2)}% c`;
+                document.getElementById('velocityDisplay').textContent = `${(this.beta * 100).toFixed(2)}% c`;
                 document.getElementById('gammaDisplay').textContent = this.gamma.toFixed(3);
                 document.getElementById('contractionDisplay').textContent = `${(100 / this.gamma).toFixed(1)}%`;
             }
