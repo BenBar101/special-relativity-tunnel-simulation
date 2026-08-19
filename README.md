@@ -1,74 +1,85 @@
 # Interactive Special Relativity Simulation
 
-![Special Relativity Simulation GIF](https://raw.githubusercontent.com/Vibe-design/special-relativity-simulation/main/special-relativity.gif)
-
-This is a web-based, interactive simulation built with vanilla JavaScript and HTML5 Canvas to visualize the counter-intuitive effects of traveling near the speed of light, as described by Einstein's theory of special relativity.
+This is a web-based interactive simulation built with vanilla JavaScript and HTML5 Canvas to visualize several special-relativistic effects from the viewpoint of an observer moving through a stationary tunnel.
 
 ## Live Demo
 
 **Experience the simulation live here:** [**https://BenBar101.github.io/special-relativity-tunnel-simulation/**](https://BenBar101.github.io/special-relativity-tunnel-simulation/)
 
----
+## Physics
 
-## Introduction
+The simulation distinguishes between quantities that are measured in an inertial frame and what an observer actually receives as light.
 
-What would you actually *see* if you could travel at 95% the speed of light? This simulation aims to answer that question by providing a first-person view of a "tunnel" environment, allowing you to control your velocity and observe the strange, mind-bending consequences of special relativity in real-time.
+### Time dilation
 
-The physics implemented are based on the core equations of the theory, demonstrating that what you see is not a bug or an artistic effect, but a faithful representation of reality at extreme speeds.
+The moving observer's proper time is `dτ`, while Earth-frame coordinate time satisfies
 
-## Features: The Physics in Action
+`dt = γ dτ`,
 
-This simulation showcases several key principles of special relativity:
+with
 
-#### 🚀 Time Dilation
-- **What to look for:** Observe the two clocks in the info panel.
-- **The Physics:** The "**Your Time (Moving)**" clock runs slower than the "**Earth Time (Stationary)**" clock. The closer you get to the speed of light, the more dramatic this difference becomes. This is a direct consequence of the principle that moving clocks tick slower.
+`γ = 1 / sqrt(1 - β²)`.
 
-#### 📏 Length Contraction
-- **What to look for:** Pay attention to the green rulers along the top and bottom of the tunnel.
-- **The Physics:** These horizontal rulers, aligned with your direction of motion, appear shorter as your speed increases. Notice that the vertical rulers on the side walls **do not** contract, as length contraction only affects the dimension parallel to the velocity.
+### Length contraction
 
-#### 🎨 Relativistic Doppler Effect & Beaming
-- **What to look for:** The colors and brightness of the objects in the tunnel.
-- **The Physics:**
-  - **Blueshift:** When moving forward, the light from objects in front of you is compressed, shifting its color towards the blue end of the spectrum and making it appear intensely bright.
-  - **Redshift:** When moving backward, the light from objects is stretched, shifting its color towards the red end of the spectrum and making it appear much dimmer.
+The displayed contraction value is the standard inertial-frame result for a length parallel to the relative velocity:
 
-####  warping Relativistic Aberration (The "Tunnel Vision" Effect)
-- **What to look for:** The geometry of the tunnel itself.
-- **The Physics:** This is perhaps the most dramatic visual effect.
-  - **Moving Forward:** The visual field is compressed into a "tunnel" in front of you. Light from your periphery appears bent towards your direction of travel. This is why the scene appears to "blur" or warp into a focused point.
-  - **Moving Backward:** The visual field expands radially outwards. Objects appear to fly away from the center towards the edges of your view, creating the perception of even faster motion.
+`L = L₀ / γ`.
 
----
+It is intentionally **not** applied as a simple visual shrinking operation. Optical appearance is calculated from the light reaching the observer.
 
-## How to Use
+### Aberration and optical appearance
 
-- **Velocity Slider:** Use the slider at the top left to control your velocity as a percentage of the speed of light (`c`).
-  - Move the slider to the **right** to travel forward.
-  - Move the slider to the **left** to travel backward.
-- **Info Panels:** The panels at the bottom display real-time data on your proper time, stationary time, the Lorentz factor (γ), and the current percentage of length contraction.
+For every rendered point, the simulation solves the past-light-cone condition
 
-## Built With
+`c (t_obs - t_emit) = |r_source - r_observer(t_emit)|`.
 
-- **HTML5 Canvas:** For rendering the 2D projection of the 3D scene.
-- **Vanilla JavaScript:** All physics, logic, and rendering are handled with plain JavaScript, with no external libraries or frameworks. This ensures the simulation is lightweight and performant.
-- **CSS3:** For styling the user interface.
+The resulting photon direction is then Lorentz-transformed into the observer frame. This is what determines the apparent direction on the canvas. This avoids treating Lorentz contraction as though it were the same thing as visual appearance.
+
+### Relativistic Doppler shift
+
+The photon four-vector transformation gives the frequency factor used by the renderer. With `n` defined as the photon propagation direction in the Earth frame,
+
+`δ = ω' / ω = γ (1 - β n_z)`.
+
+A stationary object in front of an observer moving forward has `n_z < 0`, so it is blueshifted; objects behind are redshifted. The renderer applies a tone-mapped brightness response so the very large physical Doppler factors at high velocity remain visible on an ordinary display.
+
+The color mapping is a visualization of the Doppler factor rather than a literal spectrum renderer.
+
+## Features
+
+- Interactive velocity control from `-0.95c` to `+0.95c`.
+- Proper time and Earth-frame coordinate time.
+- Lorentz factor and longitudinal length-contraction value.
+- Retarded-time/light-cone rendering.
+- Relativistic aberration from a Lorentz transformation of photon directions.
+- Direction-dependent relativistic Doppler shift.
+- Canvas-based perspective rendering with no external libraries.
+
+## Important interpretation
+
+The simulation is intended as an educational optical visualization. The numerical Lorentz transformations and light-cone calculation are physical; the canvas color mapping and tone mapping are deliberately simplified for visualization. In particular, displayed colors should not be interpreted as a full human-vision or detector-spectrum model.
 
 ## Running Locally
 
-No special tools are required to run this project.
+No special tools are required.
 
-1.  Clone the repository:
-    ```sh
-    git clone https://github.com/BenBar101/special-relativity-tunnel-simulation.git
-    ```
-2.  Navigate to the directory:
-    ```sh
-    cd special-relativity-tunnel-simulation 
-    ```
-3.  Open the `index.html` file in any modern web browser.
+1. Clone the repository:
+   ```sh
+   git clone https://github.com/BenBar101/special-relativity-tunnel-simulation.git
+   ```
+2. Navigate to the repository:
+   ```sh
+   cd special-relativity-tunnel-simulation
+   ```
+3. Open `index.html` in a modern browser.
+
+## Built With
+
+- HTML5 Canvas
+- Vanilla JavaScript
+- CSS3
 
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
+This project is licensed under the MIT License. See `LICENSE` for details.
