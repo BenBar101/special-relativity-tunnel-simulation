@@ -19,7 +19,7 @@ body{margin:0;padding:20px;background:#000;color:#fff;font-family:Arial,sans-ser
 <div class="info-card"><h3>Your Time (Proper Time)</h3><div class="time-display" id="cameraTime">0.00 s</div></div>
 <div class="info-card"><h3>Earth Coordinate Time</h3><div class="time-display" id="globalTime">0.00 s</div></div>
 <div class="info-card"><h3>Lorentz Factor (γ)</h3><div class="gamma-display" id="gammaDisplay">1.000</div></div>
-<div class="info-card"><h3>Measured Longitudinal Length</h3><div class="gamma-display" id="contractionDisplay">100.0%</div><div class="note">This is L/L₀ = 1/γ. It is not applied as a separate visual shrink; the optical image is rendered from light-cone events.</div></div>
+<div class="info-card"><h3>Measured Longitudinal Length</h3><div class="gamma-display" id="contractionDisplay">100.0%</div><div class="note">L/L₀ = 1/γ. It is not used as a visual shrink. Optical direction and Doppler shift come from the received photon; the retarded event supplies the familiar distance/progression cue.</div></div>
 </div>
 </div>
 <script>
@@ -42,31 +42,44 @@ class RelativitySimulation {
   });
  }
  updatePhysics(){this.beta=this.velocity;this.gamma=1/Math.sqrt(1-this.beta*this.beta)}
- // Earth frame: observer is at z = beta*c*t. For an Earth-fixed source, solve the past-light-cone equation
- // c(t_obs-t_e)=|r_source-r_observer(t_e)|. Rendering from these emission events avoids confusing Lorentz contraction with optical appearance.
+ // Earth frame observer worldline: z_obs(t)=beta*c*t. Solve the exact past-light-cone equation
+ // c(T-t_e)=|r_source-r_obs(t_e)| for the latest emission event reaching the observer at T.
  emissionTime(sourceZ,sourceX,sourceY){
-  const T=this.earthTime, b=this.beta, c=this.c;
-  const A=c*c*(1-b*b), B=2*(b*c*sourceZ-c*c*T), C=sourceZ*sourceZ+sourceX*sourceX+sourceY*sourceY-c*c*T*T;
-  const disc=Math.max(0,B*B-4*A*C); const roots=[(-B+Math.sqrt(disc))/(2*A),(-B-Math.sqrt(disc))/(2*A)].filter(t=>t<=T+1e-9);
+  const T=this.earthTime,b=this.beta,c=this.c;
+  const A=c*c*(1-b*b);
+  const B=2*(b*c*sourceZ-c*c*T);
+  const C=c*c*T*T-(sourceZ*sourceZ+sourceX*sourceX+sourceY*sourceY);
+  const disc=Math.max(0,B*B-4*A*C);
+  const roots=[(-B+Math.sqrt(disc))/(2*A),(-B-Math.sqrt(disc))/(2*A)].filter(t=>t<=T+1e-9);
   return roots.length?Math.max(...roots):T;
  }
- // Transform the photon 4-vector from the Earth frame into the observer frame. n points source -> observer.
+ // The photon direction and Doppler factor are the physical optical quantities.
+ // The retarded event's Lorentz-transformed z' is kept separately as a depth cue so
+ // objects still approach, pass, and recede instead of collapsing into one static diamond.
  observePoint(x,y,z){
-  const te=this.emissionTime(z,x,y); const oz=this.beta*this.c*te;
-  const dx=x,dy=y,dz=z-oz; const r=Math.hypot(dx,dy,dz); if(r<1e-9)return null;
-  const nx=-dx/r, ny=-dy/r, nz=-dz/r;
+  const te=this.emissionTime(z,x,y);
+  const oz=this.beta*this.c*te;
+  const dx=x,dy=y,dz=z-oz;
+  const r=Math.hypot(dx,dy,dz); if(r<1e-9)return null;
+  const nx=-dx/r,ny=-dy/r,nz=-dz/r;
   const den=1-this.beta*nz;
-  const npx=nx/(this.gamma*den), npy=ny/(this.gamma*den), npz=(nz-this.beta)/den;
+  const npx=nx/(this.gamma*den),npy=ny/(this.gamma*den),npz=(nz-this.beta)/den;
   const norm=Math.hypot(npx,npy,npz);
-  return {x:npx/norm,y:npy/norm,z:npz/norm,delta:this.gamma*den,te};
+  // Spatial separation of the emission event in the observer frame. This is not
+  // substituted for the photon direction; it only restores perspective scale.
+  const depth=this.gamma*(z-this.beta*this.c*te);
+  return {x:npx/norm,y:npy/norm,z:npz/norm,delta:this.gamma*den,te,depth};
  }
- projectRay(ray){if(!ray||ray.z<=1e-5)return null;return {x:this.halfWidth+this.focalLength*ray.x/ray.z,y:this.halfHeight+this.focalLength*ray.y/ray.z,scale:this.focalLength/ray.z}}
- // delta = omega'/omega = gamma(1-beta*n_z). A source ahead has n_z<0, so it is blueshifted.
+ projectRay(ray){
+  if(!ray||ray.z<=1e-5||ray.depth<=1e-4)return null;
+  const depthScale=this.focalLength/ray.depth;
+  return {x:this.halfWidth+this.focalLength*ray.x/ray.z,y:this.halfHeight+this.focalLength*ray.y/ray.z,scale:depthScale,depth:ray.depth};
+ }
  dopplerColor(hex,delta){
-  const h=hex.replace('#',''); let r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
-  const log=Math.log2(Math.max(delta,1e-6)); const shift=Math.max(-3,Math.min(3,log));
-  if(shift>0){const s=Math.min(1,shift/2); r*=1-.85*s; g*=1-.35*s; b+=(255-b)*.75*s}
-  else {const s=Math.min(1,-shift/2); r+=(255-r)*.7*s; g*=1-.45*s; b*=1-.8*s}
+  const h=hex.replace('#','');let r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
+  const log=Math.log2(Math.max(delta,1e-6)),shift=Math.max(-3,Math.min(3,log));
+  if(shift>0){const s=Math.min(1,shift/2);r*=1-.85*s;g*=1-.35*s;b+=(255-b)*.75*s}
+  else{const s=Math.min(1,-shift/2);r+=(255-r)*.7*s;g*=1-.45*s;b*=1-.8*s}
   return `rgb(${Math.round(Math.max(0,Math.min(255,r)))},${Math.round(Math.max(0,Math.min(255,g)))},${Math.round(Math.max(0,Math.min(255,b)))})`;
  }
  toneMap(delta){return Math.max(.12,Math.min(1,Math.pow(delta,2)/(1+Math.pow(delta,2))))}
@@ -78,13 +91,25 @@ class RelativitySimulation {
  renderObjects(){
   const items=[];
   for(const o of this.objects){
-   if(o.type==='ruler'){const a=this.projectRay(this.observePoint(o.x-(o.vertical?0:o.length/2),o.y-(o.vertical?o.length/2:0),o.z));const b=this.projectRay(this.observePoint(o.x+(o.vertical?0:o.length/2),o.y+(o.vertical?o.length/2:0),o.z));const ray=this.observePoint(o.x,o.y,o.z);if(a&&b&&ray)items.push({o,a,b,ray})}
-   else{const ray=this.observePoint(o.x,o.y,o.z),p=this.projectRay(ray);if(p&&ray)items.push({o,p,ray})}
+   if(o.type==='ruler'){
+    const a=this.projectRay(this.observePoint(o.x-(o.vertical?0:o.length/2),o.y-(o.vertical?o.length/2:0),o.z));
+    const b=this.projectRay(this.observePoint(o.x+(o.vertical?0:o.length/2),o.y+(o.vertical?o.length/2:0),o.z));
+    const ray=this.observePoint(o.x,o.y,o.z);
+    if(a&&b&&ray)items.push({o,a,b,ray});
+   } else {const ray=this.observePoint(o.x,o.y,o.z),p=this.projectRay(ray);if(p&&ray)items.push({o,p,ray})}
   }
-  items.sort((a,b)=>(b.ray.te-a.ray.te)); for(const it of items)this.drawObject(it)
+  items.sort((a,b)=>b.ray.depth-a.ray.depth);for(const it of items)this.drawObject(it)
  }
- drawObject(it){const o=it.o,ray=it.ray;if(o.type==='ruler'){this.ctx.strokeStyle=this.dopplerColor(o.color,ray.delta);this.ctx.globalAlpha=this.toneMap(ray.delta);this.ctx.lineWidth=2;this.ctx.beginPath();this.ctx.moveTo(it.a.x,it.a.y);this.ctx.lineTo(it.b.x,it.b.y);this.ctx.stroke();this.ctx.globalAlpha=1;return}
-  this.ctx.fillStyle=this.dopplerColor(o.color,ray.delta);this.ctx.globalAlpha=this.toneMap(ray.delta);const size=Math.max(2,o.size*it.p.scale/10);this.ctx.beginPath();this.ctx.moveTo(it.p.x,it.p.y-size);this.ctx.lineTo(it.p.x+size,it.p.y);this.ctx.lineTo(it.p.x,it.p.y+size);this.ctx.lineTo(it.p.x-size,it.p.y);this.ctx.closePath();this.ctx.fill();this.ctx.globalAlpha=1;
+ drawObject(it){
+  const o=it.o,ray=it.ray;
+  if(o.type==='ruler'){
+   this.ctx.strokeStyle=this.dopplerColor(o.color,ray.delta);this.ctx.globalAlpha=this.toneMap(ray.delta);this.ctx.lineWidth=Math.max(1,2*Math.min(4,it.ray.depth/80));this.ctx.beginPath();this.ctx.moveTo(it.a.x,it.a.y);this.ctx.lineTo(it.b.x,it.b.y);this.ctx.stroke();this.ctx.globalAlpha=1;return;
+  }
+  this.ctx.fillStyle=this.dopplerColor(o.color,ray.delta);this.ctx.globalAlpha=this.toneMap(ray.delta);
+  const size=Math.max(2,Math.min(45,o.size*it.p.scale/10));
+  this.ctx.beginPath();this.ctx.moveTo(it.p.x,it.p.y-size);this.ctx.lineTo(it.p.x+size,it.p.y);this.ctx.lineTo(it.p.x,it.p.y+size);this.ctx.lineTo(it.p.x-size,it.p.y);this.ctx.closePath();this.ctx.fill();
+  if(size>5){this.ctx.font=`${Math.max(8,Math.min(18,size*1.4))|0}px Arial`;this.ctx.textAlign='center';this.ctx.fillText(o.label,it.p.x,it.p.y+size+14)}
+  this.ctx.globalAlpha=1;
  }
  updateDisplays(){document.getElementById('velocityDisplay').textContent=`${(this.velocity*100).toFixed(2)}% c`;document.getElementById('gammaDisplay').textContent=this.gamma.toFixed(3);document.getElementById('contractionDisplay').textContent=`${(100/this.gamma).toFixed(1)}%`;document.getElementById('cameraTime').textContent=`${this.properTime.toFixed(2)} s`;document.getElementById('globalTime').textContent=`${this.earthTime.toFixed(2)} s`}
  animate(){const now=performance.now(),dt=Math.min(.05,(now-this.lastTime)/1000);this.lastTime=now;this.properTime+=dt;this.earthTime+=dt*this.gamma;this.render();this.updateDisplays();requestAnimationFrame(()=>this.animate())}
