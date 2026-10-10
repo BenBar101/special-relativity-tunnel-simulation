@@ -19,8 +19,8 @@ body{margin:0;padding:20px;background:#000;color:#fff;font-family:Arial,sans-ser
  <div class="info-card"><h3>Your Time (Proper Time)</h3><div class="time-display" id="cameraTime">0.00 s</div></div>
  <div class="info-card"><h3>Earth Coordinate Time</h3><div class="time-display" id="globalTime">0.00 s</div></div>
  <div class="info-card"><h3>Lorentz Factor (γ)</h3><div class="gamma-display" id="gammaDisplay">1.000</div></div>
- <div class="info-card"><h3>Measured Longitudinal Length</h3><div class="gamma-display" id="contractionDisplay">100.0%</div><div class="note">L/L₀ = 1/γ. Yellow depth rulers show this contracted length between tunnel rings (L₀ = 80 m); green rulers are transverse and do not contract.</div></div>
- <div class="info-card"><h3>Earth-frame Position</h3><div class="pos-display" id="positionDisplay">0.000 km</div><div class="note">Cyan gates mark every 10 km. Watch this number to feel the speed.</div></div>
+ <div class="info-card"><h3>Perceived Longitudinal Length</h3><div class="gamma-display" id="contractionDisplay">100.0% (80.0 m)</div><div class="note">L = L₀/γ. Perceived spacing between tunnel rings is contracted to <strong id="perceivedLengthVal" style="color:#ffe66d;">80.0 m</strong> (rest length L₀ = 80 m).</div></div>
+ <div class="info-card"><h3>Earth-frame Position</h3><div class="pos-display" id="positionDisplay">0.000 km</div><div class="note">Cyan checkpoint gates mark every 10 km.</div></div>
 </div>
 </div>
 <script>
@@ -31,26 +31,23 @@ class RelativitySimulation {
   this.c=300; this.properTime=0; this.earthTime=0; this.lastTime=performance.now();
   this.focalLength=400; this.halfWidth=this.canvas.width/2; this.halfHeight=this.canvas.height/2;
 
-  // The corridor is infinite in the z direction. We generate only the portion
-  // that can contribute to the current frame instead of storing an endpoint.
+  // Tunnel geometry
   this.sliceSpacing=80;
   this.renderDistance=4000;
   this.tunnelWidth=200;
   this.tunnelHeight=150;
 
-  // Checkpoint tracking — gates every 10 km (10 000 simulation metres).
+  // Checkpoints: cyan gates placed every 10 km (10,000 m)
   this.cpSpacing=10000;
-  this.lastCPIdx=0;        // floor(posZ / cpSpacing) of last frame
-  this.cpFlashTimer=0;     // seconds remaining for the crossing banner
-  this.cpFlashLabel='';    // text shown in the banner
+  this.lastCPIdx=0;
+  this.cpFlashTimer=0;
+  this.cpFlashLabel='';
 
   this.slider.addEventListener('input',e=>{this.velocity=Number(e.target.value)/100;this.updatePhysics();this.updateDisplays()});
   this.updatePhysics(); this.updateDisplays(); this.animate();
  }
 
  getVisibleZRange(){
-  // Generate a moving window around the observer. This is only a rendering
-  // optimization; there is no physical beginning or end to the corridor.
   const observerZ=this.beta*this.c*this.earthTime;
   const minZ=observerZ-this.renderDistance;
   const maxZ=observerZ+this.renderDistance;
@@ -69,11 +66,12 @@ class RelativitySimulation {
 
  updatePhysics(){this.beta=this.velocity;this.gamma=1/Math.sqrt(1-this.beta*this.beta)}
 
+ // Physical past-light-cone solution: light emitted at (x,y,z) arrives at observer at time T.
  emissionTime(z,x,y){
   const T=this.earthTime,b=this.beta,c=this.c,A=c*c*(1-b*b),B=2*(b*c*z-c*c*T),C=c*c*T*T-(z*z+x*x+y*y),disc=Math.max(0,B*B-4*A*C),sqrtDisc=Math.sqrt(disc);
-  const roots=[(-B+sqrtDisc)/(2*A),(-B-sqrtDisc)/(2*A)].filter(t=>t>=0&&t<=T+1e-9);
+  const roots=[(-B+sqrtDisc)/(2*A),(-B-sqrtDisc)/(2*A)].filter(t=>t<=T+1e-9);
   if(roots.length)return Math.max(...roots);
-  return T<=0?Math.min(0,z/c):Math.max(0,Math.min(T,T-(Math.hypot(x,y,z-this.beta*this.c*T)/this.c)));
+  return T-(Math.hypot(x,y,z-this.beta*this.c*T)/this.c);
  }
 
  observePoint(x,y,z){
@@ -104,7 +102,7 @@ class RelativitySimulation {
  render(){
   this.ctx.fillStyle='#000011';this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);
   this.renderTunnel();
-  this.renderCheckpoints(); // drawn before objects so objects appear on top
+  this.renderCheckpoints();
   this.renderObjects();
   this.renderHUD();
  }
@@ -114,24 +112,27 @@ class RelativitySimulation {
   for(const z of this.renderableSlices()){
    const pts=[[-this.tunnelWidth/2,-this.tunnelHeight/2,z],[this.tunnelWidth/2,-this.tunnelHeight/2,z],[this.tunnelWidth/2,this.tunnelHeight/2,z],[-this.tunnelWidth/2,this.tunnelHeight/2,z]].map(p=>this.projectRay(this.observePoint(...p)));
    if(pts.some(p=>!p))continue;
+
+   // Smooth distance fade to avoid popping at the render boundary
+   const fade=Math.max(0,Math.min(1,(this.renderDistance-pts[0].depth)/800));
+   this.ctx.globalAlpha=fade;
    this.ctx.beginPath();this.ctx.moveTo(pts[0].x,pts[0].y);for(let i=1;i<4;i++)this.ctx.lineTo(pts[i].x,pts[i].y);this.ctx.closePath();this.ctx.stroke();
   }
+  this.ctx.globalAlpha=1;
  }
 
- // Checkpoint gates: bright cyan arches at every 10 km, slightly wider/taller than the tunnel.
+ // Checkpoint gates: bright cyan arches at every 10 km (10,000 m)
  renderCheckpoints(){
   const cps=this.cpSpacing;
   const observerZ=this.beta*this.c*this.earthTime;
   const firstIdx=Math.floor((observerZ-this.renderDistance)/cps)-1;
   const lastIdx =Math.ceil ((observerZ+this.renderDistance)/cps)+1;
-  const margin=28; // metres beyond tunnel walls
+  const margin=28;
   const hw=this.tunnelWidth/2+margin;
   const hh=this.tunnelHeight/2+margin;
 
   for(let idx=firstIdx;idx<=lastIdx;idx++){
    const z=idx*cps;
-
-   // Project the four gate corners.
    const corners=[[-hw,-hh,z],[hw,-hh,z],[hw,hh,z],[-hw,hh,z]];
    const pts=corners.map(p=>this.projectRay(this.observePoint(...p)));
    if(pts.some(p=>!p))continue;
@@ -140,26 +141,26 @@ class RelativitySimulation {
    if(!centerRay)continue;
 
    const col=this.dopplerColor('#00ffff',centerRay.delta);
-   const alpha=Math.min(1,this.toneMap(centerRay.delta)*2.5);
+   const fade=Math.max(0,Math.min(1,(this.renderDistance-centerRay.depth)/800));
+   const alpha=Math.min(1,this.toneMap(centerRay.delta)*2.5*fade);
    const lw=Math.max(1.5,Math.min(7,this.focalLength*5/centerRay.depth));
 
-   // Outer gate frame.
    this.ctx.strokeStyle=col;this.ctx.globalAlpha=alpha;this.ctx.lineWidth=lw;
    this.ctx.beginPath();this.ctx.moveTo(pts[0].x,pts[0].y);
    for(let i=1;i<4;i++)this.ctx.lineTo(pts[i].x,pts[i].y);
    this.ctx.closePath();this.ctx.stroke();
 
-   // Corner posts — filled squares at each projected corner.
+   // Corner posts
    this.ctx.fillStyle=col;
    const ps=Math.max(2,Math.min(10,lw*2.2));
    for(const p of pts)this.ctx.fillRect(p.x-ps/2,p.y-ps/2,ps,ps);
 
-   // Distance label centred just above the gate's top edge.
+   // Distance label above the gate
    const labelRay=this.observePoint(0,-hh-18,z);
    const labelPt=this.projectRay(labelRay);
    if(labelPt){
     const km=idx*this.cpSpacing/1000;
-    const sign=km>0?'+':km<0?'':' ';
+    const sign=km>0?'+':km<0?'':'';
     const fs=Math.max(9,Math.min(34,this.focalLength*22/centerRay.depth))|0;
     this.ctx.font=`bold ${fs}px Arial`;this.ctx.textAlign='center';this.ctx.fillStyle=col;
     this.ctx.fillText(`${sign}${km} km`,labelPt.x,labelPt.y);
@@ -174,29 +175,24 @@ class RelativitySimulation {
   const slices=this.renderableSlices();
   for(let i=0;i<slices.length;i++){
    const z=slices[i];
-   // Transverse (green) rulers — no length contraction perpendicular to motion
-   const ruler={type:'ruler',z,x:0,y:-75,length:120,color:'#00ff88',obsLen:120};
-   const lowerRuler={type:'ruler',z:z+100,x:0,y:75,length:100,color:'#00ff88',obsLen:100};
-   const sideRulerLeft={type:'ruler',z:z+50,x:-100,y:0,length:80,vertical:true,color:'#00ff88',obsLen:80};
-   const sideRulerRight={type:'ruler',z:z+50,x:100,y:0,length:80,vertical:true,color:'#00ff88',obsLen:80};
+   const sliceIdx=Math.round(z/this.sliceSpacing);
+
+   // Transverse rulers (green) — maintain fixed physical position via global sliceIdx
+   const ruler={type:'ruler',z,x:0,y:-75,length:120,color:'#00ff88'};
+   const lowerRuler={type:'ruler',z:z+100,x:0,y:75,length:100,color:'#00ff88'};
+   const sideRulerLeft={type:'ruler',z:z+50,x:-100,y:0,length:80,vertical:true,color:'#00ff88'};
+   const sideRulerRight={type:'ruler',z:z+50,x:100,y:0,length:80,vertical:true,color:'#00ff88'};
    const marker={type:'marker',z,x:0,y:0,size:8,color:'#ff4488',label:`${z}m`};
 
    this.addRuler(items,ruler);
    this.addRuler(items,lowerRuler);
-   if(i%2===0){this.addRuler(items,sideRulerLeft);this.addRuler(items,sideRulerRight)}
-   if(i%3===0)this.addMarker(items,marker);
-
-   // Longitudinal (yellow) rulers along z — show Lorentz-contracted length L₀/γ
-   if(i<slices.length-1){
-    const z2=slices[i+1],pLen=z2-z,oLen=pLen/this.gamma;
-    this.addRuler(items,{type:'ruler',fromXYZ:[80,-65,z],toXYZ:[80,-65,z2],length:pLen,color:'#ffcc00',obsLen:oLen,longitudinal:true});
-    this.addRuler(items,{type:'ruler',fromXYZ:[-80,-65,z],toXYZ:[-80,-65,z2],length:pLen,color:'#ffcc00',obsLen:oLen,longitudinal:true});
-   }
+   if(Math.abs(sliceIdx)%2===0){this.addRuler(items,sideRulerLeft);this.addRuler(items,sideRulerRight)}
+   if(Math.abs(sliceIdx)%3===0)this.addMarker(items,marker);
   }
-  items.sort((a,b)=>b.ray.depth-a.ray.depth);for(const it of items)this.drawObject(it)
+  items.sort((a,b)=>b.ray.depth-a.ray.depth);
+  for(const it of items)this.drawObject(it);
  }
 
- // Supports either center-based {x,y,z,length,vertical} or explicit {fromXYZ,toXYZ} endpoints.
  addRuler(items,o){
   const p1=o.fromXYZ||[o.x-(o.vertical?0:o.length/2),o.y-(o.vertical?o.length/2:0),o.z];
   const p2=o.toXYZ||[o.x+(o.vertical?0:o.length/2),o.y+(o.vertical?o.length/2:0),o.z];
@@ -214,51 +210,54 @@ class RelativitySimulation {
 
  drawObject(it){
   const{o,ray}=it;
+  const fade=Math.max(0,Math.min(1,(this.renderDistance-ray.depth)/800));
+
   if(o.type==='ruler'){
-   const col=this.dopplerColor(o.color,ray.delta),tm=this.toneMap(ray.delta);
+   const col=this.dopplerColor(o.color,ray.delta),tm=this.toneMap(ray.delta)*fade;
    this.ctx.strokeStyle=col;this.ctx.globalAlpha=tm;this.ctx.lineWidth=Math.max(1,Math.min(5,80/ray.depth*10));
    this.ctx.beginPath();this.ctx.moveTo(it.a.x,it.a.y);this.ctx.lineTo(it.b.x,it.b.y);this.ctx.stroke();
-   // Length label: green rulers show proper length (transverse — no contraction);
-   // yellow rulers show observer-frame contracted length L₀/γ (changes with speed).
-   if(o.obsLen!==undefined){
-    const mx=(it.a.x+it.b.x)/2,my=(it.a.y+it.b.y)/2;
-    const fs=Math.max(6,Math.min(14,this.focalLength*12/ray.depth))|0;
-    if(fs>=7){
-     this.ctx.font=`${fs}px Arial`;this.ctx.textAlign='center';this.ctx.fillStyle=col;
-     const lbl=o.longitudinal?`${o.obsLen.toFixed(1)}m`:`${o.obsLen}m`;
-     this.ctx.fillText(lbl,mx,my-4);
-    }
-   }
-   this.ctx.globalAlpha=1;return;
+   this.ctx.globalAlpha=1;
+   return;
   }
-  this.ctx.fillStyle=this.dopplerColor(o.color,ray.delta);this.ctx.globalAlpha=this.toneMap(ray.delta);const size=Math.max(2,Math.min(45,o.size*it.p.scale/10));
+
+  this.ctx.fillStyle=this.dopplerColor(o.color,ray.delta);
+  this.ctx.globalAlpha=this.toneMap(ray.delta)*fade;
+  const size=Math.max(2,Math.min(45,o.size*it.p.scale/10));
   this.ctx.beginPath();this.ctx.moveTo(it.p.x,it.p.y-size);this.ctx.lineTo(it.p.x+size,it.p.y);this.ctx.lineTo(it.p.x,it.p.y+size);this.ctx.lineTo(it.p.x-size,it.p.y);this.ctx.closePath();this.ctx.fill();
-  if(size>5){this.ctx.font=`${Math.max(8,Math.min(18,size*1.4))|0}px Arial`;this.ctx.textAlign='center';this.ctx.fillText(o.label,it.p.x,it.p.y+size+14)}
+  if(size>5){
+   this.ctx.font=`${Math.max(8,Math.min(18,size*1.4))|0}px Arial`;
+   this.ctx.textAlign='center';
+   this.ctx.fillText(o.label,it.p.x,it.p.y+size+14);
+  }
   this.ctx.globalAlpha=1;
  }
 
- // HUD: position readout (bottom-right) and checkpoint-crossing flash banner (top-centre).
  renderHUD(){
   const posZ=this.beta*this.c*this.earthTime;
+  const contractedSpacing=(this.sliceSpacing/this.gamma).toFixed(1);
 
-  // Bottom-right position readout.
+  // Bottom-left HUD: Perceived ring spacing (replaces the orange lines with clean text)
+  this.ctx.globalAlpha=0.85;
+  this.ctx.fillStyle='#ffe66d';
+  this.ctx.font='bold 14px Arial';
+  this.ctx.textAlign='left';
+  this.ctx.fillText(`Perceived Ring Spacing: ${contractedSpacing} m  (Rest: ${this.sliceSpacing} m)`,18,this.canvas.height-14);
+
+  // Bottom-right HUD: Earth-frame position readout
   const posKm=(posZ/1000).toFixed(3);
-  this.ctx.globalAlpha=0.75;
   this.ctx.fillStyle='#00ffcc';
   this.ctx.font='bold 13px Arial';
   this.ctx.textAlign='right';
   this.ctx.fillText(`${posKm} km`,this.canvas.width-14,this.canvas.height-12);
   this.ctx.globalAlpha=1;
 
-  // Checkpoint-crossing flash banner — fades out over 2.5 s.
+  // Checkpoint-crossing banner
   if(this.cpFlashTimer>0){
    const a=Math.min(1,this.cpFlashTimer*1.2);
    this.ctx.save();
    this.ctx.globalAlpha=a;
-   // Translucent background strip.
    this.ctx.fillStyle='rgba(0,20,30,0.7)';
    this.ctx.fillRect(this.canvas.width/2-220,18,440,56);
-   // Text.
    this.ctx.fillStyle='#00ffff';
    this.ctx.font='bold 30px Arial';
    this.ctx.textAlign='center';
@@ -268,30 +267,31 @@ class RelativitySimulation {
  }
 
  updateDisplays(){
+  const contractedSpacing=(this.sliceSpacing/this.gamma).toFixed(1);
+  const contractionPct=(100/this.gamma).toFixed(1);
+
   document.getElementById('velocityDisplay').textContent=`${(this.velocity*100).toFixed(2)}% c`;
   document.getElementById('gammaDisplay').textContent=this.gamma.toFixed(3);
-  document.getElementById('contractionDisplay').textContent=`${(100/this.gamma).toFixed(1)}%`;
+  document.getElementById('contractionDisplay').textContent=`${contractionPct}% (${contractedSpacing} m)`;
+  const noteEl=document.getElementById('perceivedLengthVal');
+  if(noteEl)noteEl.textContent=`${contractedSpacing} m`;
+
   document.getElementById('cameraTime').textContent=`${this.properTime.toFixed(2)} s`;
   document.getElementById('globalTime').textContent=`${this.earthTime.toFixed(2)} s`;
   const posZ=this.beta*this.c*this.earthTime;
   document.getElementById('positionDisplay').textContent=`${(posZ/1000).toFixed(3)} km`;
  }
 
- // Earth coordinate time advances at wall-clock rate; observer proper time is dilated by 1/γ.
- // A moving observer ages more slowly — proper time < Earth time when β > 0.
  animate(){
   const now=performance.now(),dt=Math.min(.05,(now-this.lastTime)/1000);
   this.lastTime=now;
   this.earthTime+=dt;
   this.properTime+=dt/this.gamma;
 
-  // Detect when the observer crosses a 10 km gate boundary (Earth frame).
+  // Checkpoint gate crossing detection
   const posZ=this.beta*this.c*this.earthTime;
   const newCPIdx=Math.floor(posZ/this.cpSpacing);
-  if(newCPIdx!==this.lastCPIdx){
-   // Which gate was crossed? When moving forward newCPIdx just increased,
-   // so the gate is at newCPIdx * cpSpacing. When reversing it decreased,
-   // so the gate is at lastCPIdx * cpSpacing.
+  if(newCPIdx!==this.lastCPIdx && Math.abs(posZ)>=this.cpSpacing*0.5){
    const crossedKm=(newCPIdx>this.lastCPIdx?newCPIdx:this.lastCPIdx)*this.cpSpacing/1000;
    const sign=crossedKm>0?'+':crossedKm<0?'':'';
    this.cpFlashLabel=`${sign}${crossedKm} km`;
