@@ -19,7 +19,7 @@ body{margin:0;padding:20px;background:#000;color:#fff;font-family:Arial,sans-ser
  <div class="info-card"><h3>Your Time (Proper Time)</h3><div class="time-display" id="cameraTime">0.00 s</div></div>
  <div class="info-card"><h3>Earth Coordinate Time</h3><div class="time-display" id="globalTime">0.00 s</div></div>
  <div class="info-card"><h3>Lorentz Factor (γ)</h3><div class="gamma-display" id="gammaDisplay">1.000</div></div>
- <div class="info-card"><h3>Perceived Longitudinal Length</h3><div class="gamma-display" id="contractionDisplay">100.0% (80.0 m)</div><div class="note">L = L₀/γ. Perceived spacing between tunnel rings is contracted to <strong id="perceivedLengthVal" style="color:#ffe66d;">80.0 m</strong> (rest length L₀ = 80 m).</div></div>
+ <div class="info-card"><h3>Perceived Ruler Length</h3><div class="gamma-display" id="contractionDisplay">100.0% (50.0 m)</div><div class="note">L = L₀/γ. Longitudinal green rulers (rest L₀ = 50 m) contract as you accelerate and stretch back to <strong id="perceivedLengthVal" style="color:#ffe66d;">50.0 m</strong> as you slow down.</div></div>
  <div class="info-card"><h3>Earth-frame Position</h3><div class="pos-display" id="positionDisplay">0.000 km</div><div class="note">Cyan checkpoint gates mark every 10 km.</div></div>
 </div>
 </div>
@@ -36,6 +36,7 @@ class RelativitySimulation {
   this.renderDistance=4000;
   this.tunnelWidth=200;
   this.tunnelHeight=150;
+  this.rulerRestLen=50; // Rest length of longitudinal rulers in metres
 
   // Checkpoints: cyan gates placed every 10 km (10,000 m)
   this.cpSpacing=10000;
@@ -85,9 +86,29 @@ class RelativitySimulation {
  }
 
  projectRay(ray){
-  if(!ray||ray.depth<=0||ray.z>=0)return null;
+  if(!ray||ray.depth<=5||ray.z>=0)return null;
   const invZ=this.focalLength/(-ray.z);
   return{x:this.halfWidth+ray.x*invZ,y:this.halfHeight+ray.y*invZ,scale:this.focalLength/ray.depth,depth:ray.depth};
+ }
+
+ // Clips 3D line segment against the observer near camera boundary to prevent snapping
+ projectSegment(p1,p2){
+  const r1=this.observePoint(...p1),pr1=this.projectRay(r1);
+  const r2=this.observePoint(...p2),pr2=this.projectRay(r2);
+  if(pr1&&pr2)return{a:pr1,b:pr2,ray:r2};
+  if(!pr1&&!pr2)return null;
+  const vP=pr1?p1:p2,invP=pr1?p2:p1;
+  let lo=0,hi=1;
+  for(let it=0;it<6;it++){
+   const mid=(lo+hi)/2;
+   const testPt=[vP[0]*(1-mid)+invP[0]*mid,vP[1]*(1-mid)+invP[1]*mid,vP[2]*(1-mid)+invP[2]*mid];
+   const testPr=this.projectRay(this.observePoint(...testPt));
+   if(testPr)lo=mid;else hi=mid;
+  }
+  const clippedPt=[vP[0]*(1-lo)+invP[0]*lo,vP[1]*(1-lo)+invP[1]*lo,vP[2]*(1-lo)+invP[2]*lo];
+  const prClipped=this.projectRay(this.observePoint(...clippedPt));
+  if(!prClipped)return null;
+  return pr1?{a:pr1,b:prClipped,ray:r1}:{a:prClipped,b:pr2,ray:r2};
  }
 
  dopplerColor(hex,delta){
@@ -173,34 +194,54 @@ class RelativitySimulation {
  renderObjects(){
   const items=[];
   const slices=this.renderableSlices();
+  const hl=this.rulerRestLen/2; // Half-length of the longitudinal measuring rods
+
   for(let i=0;i<slices.length;i++){
    const z=slices[i];
    const sliceIdx=Math.round(z/this.sliceSpacing);
 
-   // Transverse rulers (green) — maintain fixed physical position via global sliceIdx
-   const ruler={type:'ruler',z,x:0,y:-75,length:120,color:'#00ff88'};
-   const lowerRuler={type:'ruler',z:z+100,x:0,y:75,length:100,color:'#00ff88'};
-   const sideRulerLeft={type:'ruler',z:z+50,x:-100,y:0,length:80,vertical:true,color:'#00ff88'};
-   const sideRulerRight={type:'ruler',z:z+50,x:100,y:0,length:80,vertical:true,color:'#00ff88'};
-   const marker={type:'marker',z,x:0,y:0,size:8,color:'#ff4488',label:`${z}m`};
+   // ROTATED RULERS: Aligned longitudinally along z (direction of motion).
+   // These contract at high speed and stretch back out as you slow down.
+   const topRuler={type:'ruler',fromXYZ:[0,-74,z-hl],toXYZ:[0,-74,z+hl],restLength:this.rulerRestLen,color:'#00ff88',capHalf:6};
+   const btmRuler={type:'ruler',fromXYZ:[0,74,z-hl],toXYZ:[0,74,z+hl],restLength:this.rulerRestLen,color:'#00ff88',capHalf:6};
+   const leftRuler={type:'ruler',fromXYZ:[-99,0,z-hl],toXYZ:[-99,0,z+hl],restLength:this.rulerRestLen,color:'#00ff88',capHalf:6};
+   const rightRuler={type:'ruler',fromXYZ:[99,0,z-hl],toXYZ:[99,0,z+hl],restLength:this.rulerRestLen,color:'#00ff88',capHalf:6};
 
-   this.addRuler(items,ruler);
-   this.addRuler(items,lowerRuler);
-   if(Math.abs(sliceIdx)%2===0){this.addRuler(items,sideRulerLeft);this.addRuler(items,sideRulerRight)}
-   if(Math.abs(sliceIdx)%3===0)this.addMarker(items,marker);
+   this.addRuler(items,topRuler);
+   this.addRuler(items,btmRuler);
+   if(Math.abs(sliceIdx)%2===0){
+    this.addRuler(items,leftRuler);
+    this.addRuler(items,rightRuler);
+   }
+
+   // Distance milestone markers
+   if(Math.abs(sliceIdx)%3===0){
+    this.addMarker(items,{type:'marker',z,x:0,y:0,size:8,color:'#ff4488',label:`${z}m`});
+   }
   }
   items.sort((a,b)=>b.ray.depth-a.ray.depth);
   for(const it of items)this.drawObject(it);
  }
 
  addRuler(items,o){
-  const p1=o.fromXYZ||[o.x-(o.vertical?0:o.length/2),o.y-(o.vertical?o.length/2:0),o.z];
-  const p2=o.toXYZ||[o.x+(o.vertical?0:o.length/2),o.y+(o.vertical?o.length/2:0),o.z];
-  const cx=(p1[0]+p2[0])/2,cy=(p1[1]+p2[1])/2,cz=(p1[2]+p2[2])/2;
-  const a=this.projectRay(this.observePoint(...p1));
-  const b=this.projectRay(this.observePoint(...p2));
-  const ray=this.observePoint(cx,cy,cz);
-  if(a&&b&&ray)items.push({o,a,b,ray});
+  const seg=this.projectSegment(o.fromXYZ,o.toXYZ);
+  if(!seg)return;
+  const cx=(o.fromXYZ[0]+o.toXYZ[0])/2,cy=(o.fromXYZ[1]+o.toXYZ[1])/2,cz=(o.fromXYZ[2]+o.toXYZ[2])/2;
+  const centerRay=this.observePoint(cx,cy,cz)||seg.ray;
+
+  // Project perpendicular end-cap tick marks
+  let capA=null,capB=null;
+  if(o.capHalf){
+   const hw=o.capHalf;
+   const isWall=Math.abs(o.fromXYZ[0])>50;
+   const a1=isWall?[o.fromXYZ[0],o.fromXYZ[1]-hw,o.fromXYZ[2]]:[o.fromXYZ[0]-hw,o.fromXYZ[1],o.fromXYZ[2]];
+   const a2=isWall?[o.fromXYZ[0],o.fromXYZ[1]+hw,o.fromXYZ[2]]:[o.fromXYZ[0]+hw,o.fromXYZ[1],o.fromXYZ[2]];
+   const b1=isWall?[o.toXYZ[0],o.toXYZ[1]-hw,o.toXYZ[2]]:[o.toXYZ[0]-hw,o.toXYZ[1],o.toXYZ[2]];
+   const b2=isWall?[o.toXYZ[0],o.toXYZ[1]+hw,o.toXYZ[2]]:[o.toXYZ[0]+hw,o.toXYZ[1],o.toXYZ[2]];
+   capA=this.projectSegment(a1,a2);
+   capB=this.projectSegment(b1,b2);
+  }
+  items.push({o,a:seg.a,b:seg.b,capA,capB,ray:centerRay});
  }
 
  addMarker(items,o){
@@ -214,8 +255,24 @@ class RelativitySimulation {
 
   if(o.type==='ruler'){
    const col=this.dopplerColor(o.color,ray.delta),tm=this.toneMap(ray.delta)*fade;
-   this.ctx.strokeStyle=col;this.ctx.globalAlpha=tm;this.ctx.lineWidth=Math.max(1,Math.min(5,80/ray.depth*10));
+   this.ctx.strokeStyle=col;this.ctx.globalAlpha=tm;
+   this.ctx.lineWidth=Math.max(1.5,Math.min(6,80/ray.depth*10));
+
+   // Longitudinal stem line
    this.ctx.beginPath();this.ctx.moveTo(it.a.x,it.a.y);this.ctx.lineTo(it.b.x,it.b.y);this.ctx.stroke();
+
+   // End-cap tick marks
+   if(it.capA){this.ctx.beginPath();this.ctx.moveTo(it.capA.a.x,it.capA.a.y);this.ctx.lineTo(it.capA.b.x,it.capA.b.y);this.ctx.stroke();}
+   if(it.capB){this.ctx.beginPath();this.ctx.moveTo(it.capB.a.x,it.capB.a.y);this.ctx.lineTo(it.capB.b.x,it.capB.b.y);this.ctx.stroke();}
+
+   // Contracted length readout
+   const contractedLen=(o.restLength/this.gamma).toFixed(1);
+   const mx=(it.a.x+it.b.x)/2,my=(it.a.y+it.b.y)/2;
+   const fs=Math.max(7,Math.min(14,this.focalLength*12/ray.depth))|0;
+   if(fs>=8){
+    this.ctx.font=`bold ${fs}px Arial`;this.ctx.textAlign='center';this.ctx.fillStyle=col;
+    this.ctx.fillText(`${contractedLen}m`,mx,my+(o.fromXYZ[1]>0?-6:14));
+   }
    this.ctx.globalAlpha=1;
    return;
   }
@@ -234,14 +291,14 @@ class RelativitySimulation {
 
  renderHUD(){
   const posZ=this.beta*this.c*this.earthTime;
-  const contractedSpacing=(this.sliceSpacing/this.gamma).toFixed(1);
+  const contractedLen=(this.rulerRestLen/this.gamma).toFixed(1);
 
-  // Bottom-left HUD: Perceived ring spacing (replaces the orange lines with clean text)
+  // Bottom-left HUD: Perceived ruler length
   this.ctx.globalAlpha=0.85;
   this.ctx.fillStyle='#ffe66d';
   this.ctx.font='bold 14px Arial';
   this.ctx.textAlign='left';
-  this.ctx.fillText(`Perceived Ring Spacing: ${contractedSpacing} m  (Rest: ${this.sliceSpacing} m)`,18,this.canvas.height-14);
+  this.ctx.fillText(`Perceived Ruler Length: ${contractedLen} m  (Rest: ${this.rulerRestLen} m)`,18,this.canvas.height-14);
 
   // Bottom-right HUD: Earth-frame position readout
   const posKm=(posZ/1000).toFixed(3);
@@ -267,14 +324,14 @@ class RelativitySimulation {
  }
 
  updateDisplays(){
-  const contractedSpacing=(this.sliceSpacing/this.gamma).toFixed(1);
+  const contractedLen=(this.rulerRestLen/this.gamma).toFixed(1);
   const contractionPct=(100/this.gamma).toFixed(1);
 
   document.getElementById('velocityDisplay').textContent=`${(this.velocity*100).toFixed(2)}% c`;
   document.getElementById('gammaDisplay').textContent=this.gamma.toFixed(3);
-  document.getElementById('contractionDisplay').textContent=`${contractionPct}% (${contractedSpacing} m)`;
+  document.getElementById('contractionDisplay').textContent=`${contractionPct}% (${contractedLen} m)`;
   const noteEl=document.getElementById('perceivedLengthVal');
-  if(noteEl)noteEl.textContent=`${contractedSpacing} m`;
+  if(noteEl)noteEl.textContent=`${contractedLen} m`;
 
   document.getElementById('cameraTime').textContent=`${this.properTime.toFixed(2)} s`;
   document.getElementById('globalTime').textContent=`${this.earthTime.toFixed(2)} s`;
