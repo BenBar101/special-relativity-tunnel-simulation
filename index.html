@@ -80,7 +80,7 @@ class RelativitySimulation {
  }
 
  projectRay(ray){
-  if(!ray||ray.depth<=1e-4||ray.z>=-1e-6)return null;
+  if(!ray||ray.depth<=0||ray.z>=0)return null;
   const invZ=this.focalLength/(-ray.z);
   return{x:this.halfWidth+ray.x*invZ,y:this.halfHeight+ray.y*invZ,scale:this.focalLength/ray.depth,depth:ray.depth};
  }
@@ -92,7 +92,7 @@ class RelativitySimulation {
   return`rgb(${Math.round(r)},${Math.round(g)},${Math.round(b)})`;
  }
 
- toneMap(d){return Math.max(.12,Math.min(1,Math.pow(d,2)/(1+Math.pow(d,2))))}
+  toneMap(d){const d4=d*d*d*d;return Math.max(.05,Math.min(1,d4/(1+d4)))}
 
  render(){this.ctx.fillStyle='#000011';this.ctx.fillRect(0,0,this.canvas.width,this.canvas.height);this.renderTunnel();this.renderObjects()}
 
